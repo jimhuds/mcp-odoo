@@ -3,4 +3,10 @@
   "db": "your-database-name",
   "username": "your-username",
   "password": "your-password-or-api-key"
-} 
+}
+
+// Environment Variables for Permissions:
+// ODOO_PERMISSION_READ=1     (allow read operations)
+// ODOO_PERMISSION_WRITE=1    (allow write operations)
+// ODOO_PERMISSION_UPDATE=1   (allow update operations)
+// ODOO_PERMISSION_DELETE=0   (allow delete operations - disabled by default) 

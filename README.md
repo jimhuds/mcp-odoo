@@ -7,6 +7,7 @@ An MCP server implementation that integrates with Odoo ERP systems, enabling AI 
 * **Comprehensive Odoo Integration**: Full access to Odoo models, records, and methods
 * **XML-RPC Communication**: Secure connection to Odoo instances via XML-RPC
 * **Flexible Configuration**: Support for config files and environment variables
+* **Permission Controls**: Granular permission system for read, write, update, and delete operations
 * **Resource Pattern System**: URI-based access to Odoo data structures
 * **Error Handling**: Clear error messages for common Odoo API issues
 * **Stateless Operations**: Clean request/response cycle for reliable integration
@@ -36,6 +37,11 @@ An MCP server implementation that integrates with Odoo ERP systems, enabling AI 
     * `end_date` (string): End date in YYYY-MM-DD format
     * `employee_id` (optional number): Optional employee ID to filter holidays
   * Returns: Object containing success indicator, list of holidays found, and any error message
+
+* **check_permissions**
+  * Check the current permission configuration for all operation types
+  * Inputs: None
+  * Returns: Dictionary with success indicator, current permission status for each operation type (read/write/update/delete), and any error message
 
 ## Resources
 
@@ -82,6 +88,31 @@ An MCP server implementation that integrates with Odoo ERP systems, enabling AI 
    * `ODOO_VERIFY_SSL`: Whether to verify SSL certificates (default: true)
    * `HTTP_PROXY`: Force the ODOO connection to use an HTTP proxy
 
+### Permission Controls
+
+The server supports granular permission controls through environment variables. All operations are categorized into four types:
+
+* **Read Operations**: `search`, `search_read`, `read`, `browse`, `fields_get`, `name_search`, etc.
+* **Write Operations**: `create`, `copy`, `import_data`, etc.
+* **Update Operations**: `write`, `update`, etc.
+* **Delete Operations**: `unlink`, `delete`, etc.
+
+Environment variables for permissions:
+   * `ODOO_PERMISSION_READ`: Allow read operations (default: "1")
+   * `ODOO_PERMISSION_WRITE`: Allow write operations (default: "1")
+   * `ODOO_PERMISSION_UPDATE`: Allow update operations (default: "1")
+   * `ODOO_PERMISSION_DELETE`: Allow delete operations (default: "0")
+
+Set these variables to "1", "true", or "yes" to enable permissions, or "0", "false", or "no" to disable them.
+
+**Example: Read-only configuration**
+```bash
+export ODOO_PERMISSION_READ="1"
+export ODOO_PERMISSION_WRITE="0"
+export ODOO_PERMISSION_UPDATE="0"
+export ODOO_PERMISSION_DELETE="0"
+```
+
 ### Usage with Claude Desktop
 
 Add this to your `claude_desktop_config.json`:
@@ -99,7 +130,11 @@ Add this to your `claude_desktop_config.json`:
         "ODOO_URL": "https://your-odoo-instance.com",
         "ODOO_DB": "your-database-name",
         "ODOO_USERNAME": "your-username",
-        "ODOO_PASSWORD": "your-password-or-api-key"
+        "ODOO_PASSWORD": "your-password-or-api-key",
+        "ODOO_PERMISSION_READ": "1",
+        "ODOO_PERMISSION_WRITE": "1",
+        "ODOO_PERMISSION_UPDATE": "1",
+        "ODOO_PERMISSION_DELETE": "0"
       }
     }
   }
@@ -125,13 +160,25 @@ Add this to your `claude_desktop_config.json`:
         "ODOO_USERNAME",
         "-e",
         "ODOO_PASSWORD",
+        "-e",
+        "ODOO_PERMISSION_READ",
+        "-e",
+        "ODOO_PERMISSION_WRITE",
+        "-e",
+        "ODOO_PERMISSION_UPDATE",
+        "-e",
+        "ODOO_PERMISSION_DELETE",
         "mcp/odoo"
       ],
       "env": {
         "ODOO_URL": "https://your-odoo-instance.com",
         "ODOO_DB": "your-database-name",
         "ODOO_USERNAME": "your-username",
-        "ODOO_PASSWORD": "your-password-or-api-key"
+        "ODOO_PASSWORD": "your-password-or-api-key",
+        "ODOO_PERMISSION_READ": "1",
+        "ODOO_PERMISSION_WRITE": "1",
+        "ODOO_PERMISSION_UPDATE": "1",
+        "ODOO_PERMISSION_DELETE": "0"
       }
     }
   }

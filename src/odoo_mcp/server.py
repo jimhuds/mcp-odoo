@@ -55,9 +55,14 @@ mcp = FastMCP(
 )
 def get_models() -> str:
     """Lists all available models in the Odoo system"""
-    odoo_client = get_odoo_client()
-    models = odoo_client.get_models()
-    return json.dumps(models, indent=2)
+    try:
+        odoo_client = get_odoo_client()
+        models = odoo_client.get_models()
+        return json.dumps(models, indent=2)
+    except PermissionError as e:
+        return json.dumps({"error": str(e), "error_type": "permission_denied"}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
 
 
 @mcp.resource(
@@ -81,6 +86,8 @@ def get_model_info(model_name: str) -> str:
         model_info["fields"] = fields
 
         return json.dumps(model_info, indent=2)
+    except PermissionError as e:
+        return json.dumps({"error": str(e), "error_type": "permission_denied"}, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)}, indent=2)
 
@@ -106,6 +113,8 @@ def get_record(model_name: str, record_id: str) -> str:
                 {"error": f"Record not found: {model_name} ID {record_id}"}, indent=2
             )
         return json.dumps(record[0], indent=2)
+    except PermissionError as e:
+        return json.dumps({"error": str(e), "error_type": "permission_denied"}, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)}, indent=2)
 
@@ -134,6 +143,8 @@ def search_records_resource(model_name: str, domain: str) -> str:
         results = odoo_client.search_read(model_name, domain_list, limit=limit)
 
         return json.dumps(results, indent=2)
+    except PermissionError as e:
+        return json.dumps({"error": str(e), "error_type": "permission_denied"}, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)}, indent=2)
 
@@ -344,6 +355,8 @@ def execute_method(
 
         result = odoo.execute_method(model, method, *args, **kwargs)
         return {"success": True, "result": result}
+    except PermissionError as e:
+        return {"success": False, "error": str(e), "error_type": "permission_denied"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -377,6 +390,8 @@ def search_employee(
             EmployeeSearchResult(id=item[0], name=item[1]) for item in result
         ]
         return SearchEmployeeResponse(success=True, result=parsed_result)
+    except PermissionError as e:
+        return SearchEmployeeResponse(success=False, error=str(e))
     except Exception as e:
         return SearchEmployeeResponse(success=False, error=str(e))
 
@@ -440,5 +455,38 @@ def search_holidays(
         parsed_holidays = [Holiday(**holiday) for holiday in holidays]
         return SearchHolidaysResponse(success=True, result=parsed_holidays)
 
+    except PermissionError as e:
+        return SearchHolidaysResponse(success=False, error=str(e))
     except Exception as e:
         return SearchHolidaysResponse(success=False, error=str(e))
+
+
+@mcp.tool(description="Check current permission configuration")
+def check_permissions(ctx: Context) -> Dict[str, Any]:
+    """
+    Check the current permission configuration for all operation types.
+
+    Returns:
+        Dictionary containing:
+        - success: Boolean indicating success
+        - permissions: Dictionary with permission status for each operation type
+        - error: Error message (if failure)
+    """
+    try:
+        odoo = ctx.request_context.lifespan_context.odoo
+        permissions = odoo.permissions
+        
+        permission_status = {
+            "read": permissions.check_permission("read"),
+            "write": permissions.check_permission("write"),
+            "update": permissions.check_permission("update"),
+            "delete": permissions.check_permission("delete")
+        }
+        
+        return {
+            "success": True,
+            "permissions": permission_status,
+            "message": "Permission check completed successfully"
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}

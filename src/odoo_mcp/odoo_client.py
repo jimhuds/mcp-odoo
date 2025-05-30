@@ -12,6 +12,107 @@ import http.client
 import xmlrpc.client
 
 
+class PermissionManager:
+    """Manages permissions for different Odoo operations"""
+
+    def __init__(self):
+        """Initialize permissions from environment variables"""
+        self.read_enabled = os.environ.get("ODOO_PERMISSION_READ", "1").lower() in ["1", "true", "yes"]
+        self.write_enabled = os.environ.get("ODOO_PERMISSION_WRITE", "1").lower() in ["1", "true", "yes"]
+        self.update_enabled = os.environ.get("ODOO_PERMISSION_UPDATE", "1").lower() in ["1", "true", "yes"]
+        self.delete_enabled = os.environ.get("ODOO_PERMISSION_DELETE", "0").lower() in ["1", "true", "yes"]
+        
+        # Print permission configuration
+        print("Permission configuration:", file=os.sys.stderr)
+        print(f"  Read: {self.read_enabled}", file=os.sys.stderr)
+        print(f"  Write: {self.write_enabled}", file=os.sys.stderr)
+        print(f"  Update: {self.update_enabled}", file=os.sys.stderr)
+        print(f"  Delete: {self.delete_enabled}", file=os.sys.stderr)
+
+    def check_permission(self, operation: str) -> bool:
+        """
+        Check if a specific operation is allowed
+        
+        Args:
+            operation: The operation type ('read', 'write', 'update', 'delete')
+            
+        Returns:
+            bool: True if operation is allowed, False otherwise
+        """
+        operation = operation.lower()
+        if operation == "read":
+            return self.read_enabled
+        elif operation == "write":
+            return self.write_enabled
+        elif operation == "update":
+            return self.update_enabled
+        elif operation == "delete":
+            return self.delete_enabled
+        else:
+            return False
+
+    def classify_method(self, method: str) -> str:
+        """
+        Classify a method into operation type
+        
+        Args:
+            method: The Odoo method name
+            
+        Returns:
+            str: The operation type ('read', 'write', 'update', 'delete')
+        """
+        method = method.lower()
+        
+        # Read operations
+        read_methods = [
+            'read', 'search', 'search_read', 'search_count', 'browse',
+            'fields_get', 'name_search', 'name_get', 'export_data',
+            'get_metadata', 'check_access_rule', 'check_access_rights'
+        ]
+        
+        # Write operations (create new records)
+        write_methods = [
+            'create', 'copy', 'import_data'
+        ]
+        
+        # Update operations (modify existing records)
+        update_methods = [
+            'write', 'update'
+        ]
+        
+        # Delete operations
+        delete_methods = [
+            'unlink', 'delete'
+        ]
+        
+        if method in read_methods or method.startswith('get_') or method.startswith('search_'):
+            return 'read'
+        elif method in write_methods or method.startswith('create_'):
+            return 'write'
+        elif method in update_methods or method.startswith('write_') or method.startswith('update_'):
+            return 'update'
+        elif method in delete_methods or method.startswith('unlink_') or method.startswith('delete_'):
+            return 'delete'
+        else:
+            # Default to read for unknown methods to be safe
+            return 'read'
+
+    def require_permission(self, operation: str, method: str = None):
+        """
+        Raise an exception if the operation is not allowed
+        
+        Args:
+            operation: The operation type
+            method: Optional method name for better error messages
+            
+        Raises:
+            PermissionError: If the operation is not allowed
+        """
+        if not self.check_permission(operation):
+            method_info = f" (method: {method})" if method else ""
+            raise PermissionError(f"Operation '{operation}' is not permitted{method_info}. Check ODOO_PERMISSION_{operation.upper()} environment variable.")
+
+
 class OdooClient:
     """Client for interacting with Odoo via XML-RPC"""
 
@@ -55,6 +156,9 @@ class OdooClient:
         # Setup connections
         self._common = None
         self._models = None
+
+        # Initialize permission manager
+        self.permissions = PermissionManager()
 
         # Parse hostname for logging
         parsed_url = urllib.parse.urlparse(self.url)
@@ -109,14 +213,18 @@ class OdooClient:
             raise ValueError(f"Failed to authenticate with Odoo: {str(e)}")
 
     def _execute(self, model, method, *args, **kwargs):
-        """Execute a method on an Odoo model"""
+        """Execute a method on an Odoo model with permission checking"""
+        # Check permissions before executing
+        operation = self.permissions.classify_method(method)
+        self.permissions.require_permission(operation, method)
+        
         return self._models.execute_kw(
             self.db, self.uid, self.password, model, method, args, kwargs
         )
 
     def execute_method(self, model, method, *args, **kwargs):
         """
-        Execute an arbitrary method on a model
+        Execute an arbitrary method on a model with permission checking
 
         Args:
             model: The model name (e.g., 'res.partner')
@@ -126,6 +234,9 @@ class OdooClient:
 
         Returns:
             Result of the method execution
+            
+        Raises:
+            PermissionError: If the operation is not permitted based on environment variables
         """
         return self._execute(model, method, *args, **kwargs)
 
