@@ -1,0 +1,74 @@
+# Use Python 3.11 as the base image
+FROM python:3.11-slim
+
+# Install Node.js and other dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    python3-dev \
+    gcc \
+    build-essential \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install supergateway globally
+RUN npm install -g supergateway
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables for Odoo connection and permissions (can be overridden at runtime)
+ENV ODOO_URL=""
+ENV ODOO_DB=""
+ENV ODOO_USERNAME=""
+ENV ODOO_PASSWORD=""
+ENV ODOO_TIMEOUT="30"
+ENV ODOO_VERIFY_SSL="1"
+ENV ODOO_PERMISSION_READ="1"
+ENV ODOO_PERMISSION_WRITE="1"
+ENV ODOO_PERMISSION_UPDATE="1"
+ENV ODOO_PERMISSION_DELETE="0"
+
+# Install mcp_odoo by cloning and modifying dependencies
+RUN git clone https://github.com/jimhuds/mcp-odoo /tmp/mcp-odoo && \
+    cd /tmp/mcp-odoo && \
+    pip install --upgrade pip setuptools wheel toml && \
+    echo '#!/usr/bin/env python3' > /tmp/fix.py && \
+    echo 'import toml' >> /tmp/fix.py && \
+    echo 'with open("pyproject.toml", "r") as f:' >> /tmp/fix.py && \
+    echo '    config = toml.load(f)' >> /tmp/fix.py && \
+    echo 'config["project"]["dependencies"] = [' >> /tmp/fix.py && \
+    echo '    "mcp>=0.1.1",' >> /tmp/fix.py && \
+    echo '    "requests>=2.31.0",' >> /tmp/fix.py && \
+    echo '    "pydantic>=2.0.0",' >> /tmp/fix.py && \
+    echo '    "fastapi>=0.100.0",' >> /tmp/fix.py && \
+    echo '    "python-dateutil>=2.8.2"' >> /tmp/fix.py && \
+    echo ']' >> /tmp/fix.py && \
+    echo 'with open("pyproject.toml", "w") as f:' >> /tmp/fix.py && \
+    echo '    toml.dump(config, f)' >> /tmp/fix.py && \
+    echo 'with open("src/odoo_mcp/odoo_client.py", "r") as f:' >> /tmp/fix.py && \
+    echo '    content = f.read()' >> /tmp/fix.py && \
+    echo 'import re' >> /tmp/fix.py && \
+    echo 'content = re.sub(r"print\(\s*f\"Authenticating with database: \{\s*self\.db\}, username: \{self\.username\}\",\s*file=os\.sys\.stderr,\s*\)", "print(f\"Authenticating with database: {self.db}, username: {self.username}\", file=os.sys.stderr)", content)' >> /tmp/fix.py && \
+    echo 'content = re.sub(r"print\(\s*f\"Making request to \{\s*self\.hostname\}\/xmlrpc\/2\/common \(attempt 1\)\",\s*file=os\.sys\.stderr,\s*\)", "print(f\"Making request to {self.hostname}/xmlrpc/2/common (attempt 1)\", file=os.sys.stderr)", content)' >> /tmp/fix.py && \
+    echo 'with open("src/odoo_mcp/odoo_client.py", "w") as f:' >> /tmp/fix.py && \
+    echo '    f.write(content)' >> /tmp/fix.py && \
+    python3 /tmp/fix.py && \
+    rm /tmp/fix.py && \
+    pip install -e .
+
+# Create default Odoo configuration
+RUN echo '{\n\
+    "url": "${ODOO_URL}",\n\
+    "db": "${ODOO_DB}",\n\
+    "username": "${ODOO_USERNAME}",\n\
+    "password": "${ODOO_PASSWORD}"\n\
+}' > /app/odoo_config.json
+
+# Expose the default port used by supergateway
+EXPOSE 8000
+
+# Set the entrypoint to run supergateway with mcp_odoo
+ENTRYPOINT ["supergateway"]
+CMD ["--stdio", "python3 -m odoo_mcp", "--port", "8000"] 
